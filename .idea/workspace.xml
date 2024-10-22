@@ -6,9 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="4dd81dad-28a6-410b-aa90-5ffd6c5713e7" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PEMD/core/analysis.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/core/analysis.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/PEMD/core/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/core/model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PEMD/model/model_lib.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/model/model_lib.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PEMD/core/run.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/core/run.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/PEMD/simulation/qm.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/simulation/qm.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/PEMD/simulation/sim_lib.py" beforeDir="false" afterPath="$PROJECT_DIR$/PEMD/simulation/sim_lib.py" afterDir="false" />
     </list>

@@ -12,10 +12,6 @@ from PEMD.model.build import (
     gen_poly_smiles,
     gen_poly_3D,
 )
-from PEMD.simulation.qm import (
-    conformer_search_xtb,
-    conformer_search_gaussian,
-)
 
 class PEMDModel:
     def __init__(self, poly_name, repeating_unit, leftcap, rightcap, length_short, length_poly, ):
@@ -60,8 +56,6 @@ class PEMDModel:
                 self.rightcap,
                 self.length_poly,
             )
-
-    # def conformer_search
 
     # def build_polymer(self,):
     #

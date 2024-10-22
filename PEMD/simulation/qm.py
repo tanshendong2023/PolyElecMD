@@ -165,23 +165,20 @@ def conformer_search_gaussian(
     job_ids = []
     for i, structure in enumerate(structures):
 
-        # RESP template
-        file_contents = f"nprocshared={core}\n"
-        file_contents += f"%mem={mem}\n"
-        file_contents += f"# opt freq {function} {basis_set} em=GD3BJ scrf=(pcm,solvent=generic,read)\n\n"
-        file_contents += 'conformer search\n\n'
-        file_contents += f'{chg} {mult}\n'  # charge and multiplicity
-        for atom in structure[2:]:  # Include atomic coordinates in the Gaussian input file
-            file_contents += (f"{atom.split()[0]:<2} {atom.split()[1]:>15} {atom.split()[2]:>15} "
-                              f"{atom.split()[3]:>15}\n\n")
-        file_contents += f"eps={epsilon}\n"
-        file_contents += "epsinf=2.1\n"
-        file_contents += '\n\n'
-
-        # create gjf file
-        file_path = os.path.join(gaussian_dir, f"conf_{i + 1}.gjf")
-        with open(file_path, 'w') as file:
-            file.write(file_contents)
+        # 调用 QMcalc_gaussian 函数生成 Gaussian 输入文件
+        filename = f"conf_{i + 1}.gjf"
+        QMcalc_gaussian(
+            structure=structure,
+            core=core,
+            mem=mem,
+            function=function,
+            basis_set=basis_set,
+            chg=chg,
+            mult=mult,
+            epsilon=epsilon,
+            gaussian_dir=gaussian_dir,
+            filename=filename
+        )
 
         slurm = Slurm(J='g16',
                       N=1,
@@ -226,7 +223,38 @@ def conformer_search_gaussian(
         else:
             print("g16 conformer search not finish, waiting...")
             time.sleep(10)  # wait for 10 seconds
-    return sorted_gaussian_file
+    return sorted_gaussian_file, lowest_energy_structure_file
+
+def QMcalc_gaussian(
+        structure,
+        core=32,
+        mem='64GB',
+        function='B3LYP',
+        basis_set='6-311+g(d,p)',
+        chg=0,
+        mult=1,
+        epsilon=5.0,
+        gaussian_dir='.',
+        filename='conf.gjf'
+    ):
+
+    # 构建 Gaussian 输入文件内容
+    file_contents = f"%nprocshared={core}\n"
+    file_contents += f"%mem={mem}\n"
+    file_contents += f"# opt freq {function} {basis_set} em=GD3BJ scrf=(pcm,solvent=generic,read)\n\n"
+    file_contents += 'conformer search\n\n'
+    file_contents += f'{chg} {mult}\n'  # 电荷和多重态
+    for atom in structure[2:]:  # 包含原子坐标
+        file_contents += (f"{atom.split()[0]:<2} {atom.split()[1]:>15} {atom.split()[2]:>15} "
+                          f"{atom.split()[3]:>15}\n\n")
+    file_contents += f"eps={epsilon}\n"
+    file_contents += "epsinf=2.1\n"
+    file_contents += '\n\n'
+
+    # 创建 gjf 文件
+    file_path = os.path.join(gaussian_dir, filename)
+    with open(file_path, 'w') as file:
+        file.write(file_contents)
 
 
 def calc_resp_gaussian(
