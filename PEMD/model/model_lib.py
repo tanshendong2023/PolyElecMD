@@ -166,7 +166,7 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length
     else:
         second_atom = atom2
 
-    if length == 3:
+    if length == 1:
 
         inti_mol3 = input_mol
 
