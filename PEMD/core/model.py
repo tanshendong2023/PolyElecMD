@@ -13,6 +13,7 @@ from PEMD.model.build import (
     gen_poly_3D,
 )
 
+
 class PEMDModel:
     def __init__(self, poly_name, repeating_unit, leftcap, rightcap, length_short, length_poly, ):
         self.poly_name = poly_name
@@ -44,9 +45,9 @@ class PEMDModel:
             return gen_poly_smiles(
                 self.poly_name,
                 self.repeating_unit,
+                self.length_short,
                 self.leftcap,
                 self.rightcap,
-                self.length_short,
             )
         else:
             return gen_poly_smiles(
