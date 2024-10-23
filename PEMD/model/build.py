@@ -55,17 +55,13 @@ def calc_poly_length(total_mass_polymer, smiles_repeating_unit, smiles_leftcap, 
 
     return length
 
-def gen_poly_smiles(poly_name, repeating_unit, leftcap, rightcap, length, ):
+def gen_poly_smiles(poly_name, repeating_unit, length, leftcap, rightcap,):
 
     (
         dum1,
         dum2,
         atom1,
         atom2,
-        neigh_atoms_info,
-        oligo_list,
-        dum,
-        unit_dis,
     ) = model_lib.Init_info(
         poly_name,
         repeating_unit,

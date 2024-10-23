@@ -126,19 +126,27 @@ def Init_info(poly_name, smiles_mid, length, ):
     atom1 = neigh_atoms_info['NeiAtom'][dum1].copy()[0]
     atom2 = neigh_atoms_info['NeiAtom'][dum2].copy()[0]
 
-    return dum1, dum2, atom1, atom2, neigh_atoms_info, oligo_list, dum, unit_dis
+    return dum1, dum2, atom1, atom2,
 
+def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length, smiles_LCap_, smiles_RCap_, ):
+    input_mol = Chem.MolFromSmiles(smiles_each)
 
-def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, repeating_unit, length, smiles_LCap_, smiles_RCap_, ):
-
-    input_mol = Chem.MolFromSmiles(repeating_unit)
     edit_m1 = Chem.EditableMol(input_mol)
-    edit_m1.RemoveAtom(dum1)
+    edit_m2 = Chem.EditableMol(input_mol)
+    edit_m3 = Chem.EditableMol(input_mol)
+
+    edit_m1.RemoveAtom(dum2)
+    mol_without_dum1 = Chem.Mol(edit_m1.GetMol())
+
+    edit_m2.RemoveAtom(dum1)
+    mol_without_dum2 = Chem.Mol(edit_m2.GetMol())
+
+    edit_m3.RemoveAtom(dum1)
     if dum1 < dum2:
-        edit_m1.RemoveAtom(dum2 - 1)
+        edit_m3.RemoveAtom(dum2 - 1)
     else:
-        edit_m1.RemoveAtom(dum2)
-    monomer_mol = edit_m1.GetMol()
+        edit_m3.RemoveAtom(dum2)
+    monomer_mol = edit_m3.GetMol()
     inti_mol = monomer_mol
 
     if atom1 > atom2:
@@ -158,7 +166,7 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, repeating_unit, len
     else:
         second_atom = atom2
 
-    for i in range(1, length):
+    for i in range(1, length - 2):
         combo = Chem.CombineMols(inti_mol, monomer_mol)
         edcombo = Chem.EditableMol(combo)
         edcombo.AddBond(
@@ -168,6 +176,26 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, repeating_unit, len
         )
 
         inti_mol = edcombo.GetMol()
+
+    inti_mol1 = inti_mol
+
+    combo = Chem.CombineMols(mol_without_dum1, inti_mol1)
+    edcombo = Chem.EditableMol(combo)
+    edcombo.AddBond(
+        atom2,
+        first_atom + mol_without_dum1.GetNumAtoms(),
+        order=Chem.rdchem.BondType.SINGLE
+    )
+    inti_mol2 = edcombo.GetMol()
+
+    combo = Chem.CombineMols(inti_mol2, mol_without_dum2)
+    edcombo = Chem.EditableMol(combo)
+    edcombo.AddBond(
+        atom2 + inti_mol1.GetNumAtoms(),
+        atom1 + inti_mol1.GetNumAtoms() + atom2,
+        order=Chem.rdchem.BondType.SINGLE
+    )
+    inti_mol3 = edcombo.GetMol()
 
     inti_mol = gen_smiles_with_cap(
         poly_name,
@@ -180,16 +208,26 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, repeating_unit, len
 
     return Chem.MolToSmiles(inti_mol)
 
-def gen_smiles_with_cap(poly_name, atom1, atom2, inti_mol, smiles_LCap_, smiles_RCap_):
+def gen_smiles_with_cap(poly_name, atom1, atom2, inti_mol, length, smiles_LCap_, smiles_RCap_):
 
     # Main chain
-    main_mol_noDum = inti_mol
+    init_smi = Chem.MolToSmiles(inti_mol)
+    (
+        dum1,
+        dum2,
+        atom1,
+        atom2,
+    ) = Init_info(
+        poly_name,
+        init_smi,
+        length,
+    )
     first_atom, second_atom = atom1, atom2
 
     # Left Cap
     if not smiles_LCap_:
         # Decide whether to cap with H or CH3
-        first_atom_obj = main_mol_noDum.GetAtomWithIdx(first_atom)
+        first_atom_obj = inti_mol.GetAtomWithIdx(first_atom)
         atomic_num = first_atom_obj.GetAtomicNum()
         degree = first_atom_obj.GetDegree()
         num_implicit_hs = first_atom_obj.GetNumImplicitHs()
@@ -198,7 +236,7 @@ def gen_smiles_with_cap(poly_name, atom1, atom2, inti_mol, smiles_LCap_, smiles_
 
         if atomic_num == 6 and degree == 2 and total_hs == 2:
             # It's a -CH2- group, cap with H
-            edmol = Chem.RWMol(main_mol_noDum)
+            edmol = Chem.RWMol(inti_mol)
             h_idx = edmol.AddAtom(Chem.Atom(1))  # Add hydrogen atom
             edmol.AddBond(first_atom, h_idx, order=Chem.rdchem.BondType.SINGLE)
             main_mol_noDum = edmol.GetMol()
@@ -206,7 +244,7 @@ def gen_smiles_with_cap(poly_name, atom1, atom2, inti_mol, smiles_LCap_, smiles_
             # Cap with CH3
             cap_mol = Chem.MolFromSmiles('C')
             cap_add = cap_mol.GetNumAtoms()
-            combo = Chem.CombineMols(cap_mol, main_mol_noDum)
+            combo = Chem.CombineMols(cap_mol, inti_mol)
             edcombo = Chem.EditableMol(combo)
             edcombo.AddBond(0, cap_add + first_atom, order=Chem.rdchem.BondType.SINGLE)
             main_mol_noDum = edcombo.GetMol()
