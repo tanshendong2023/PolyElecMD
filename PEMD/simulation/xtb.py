@@ -15,7 +15,7 @@ class PEMDXtb:
             work_dir,
             xyz_filename,
             outfile_headname,
-            epsilon=80.4,
+            epsilon,
             chg=0,
             mult=1
     ):
@@ -42,28 +42,32 @@ class PEMDXtb:
             print(f"Error executing XTB: {e}")
             return e.stderr  # Return the error output if the command fails
 
-    def gen_slurm(self, ):
+    def gen_slurm(self, script_name, job_name, nodes, ntasks_per_node, partition):
 
         slurm_script = PEMDSlurm(
             self.work_dir,
-            script_name="sub.xtb",
-            job_name="xtb",
-            nodes=1,
-            ntasks_per_node=64,
-            partition="standard",
+            script_name,
         )
 
         slurm_script.add_command(
             f"xtb {self.xyz_filename} --opt --gbsa={self.epsilon} "
-            f"--chrg={self.chg} --uhf={self.mult} --ceasefiles --namespace {self.outfile_headname}"
+            f"--chrg={self.chg} --uhf={self.mult} --ceasefiles --namespace {self.work_dir}/{self.outfile_headname}"
         )
 
         # Generate the SLURM script
-        slurm_script.generate_script()
+        script_path = slurm_script.generate_script(
+            job_name,
+            nodes,
+            ntasks_per_node,
+            partition,
+        )
 
-        return slurm_script
+        # print(f"XTB sybmit script generated successfually: {script_path}")
+        return script_path
 
-    def run_slurm(self):
-
-        slurm_script = self.gen_slurm()
-        slurm_script.submit_job()
+    # def run_slurm(self, script_name):
+    #
+    #     slurm_script = self.gen_slurm(script_name)
+    #     job_id = slurm_script.submit_job()
+    #
+    #     return job_id

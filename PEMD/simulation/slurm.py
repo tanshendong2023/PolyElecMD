@@ -13,47 +13,40 @@ class PEMDSlurm:
             self,
             work_dir,
             script_name="sub.script",
-            job_name="my_job",
-            nodes=1,
-            ntasks_per_node=64,
-            partition="standard",
     ):
 
         self.work_dir = work_dir
         self.script_name = script_name
-        self.job_name = job_name
-        self.partition = partition
-        self.nodes = nodes
-        self.ntasks_per_node = ntasks_per_node
         self.commands = []
 
     def add_command(self, command):
 
         self.commands.append(command)
 
-    def gen_header(self):
+    def gen_header(self, job_name, nodes, ntasks_per_node, partition):
 
         header_lines = [
             "#!/bin/bash",
-            f"#SBATCH -J {self.job_name}",
-            f"#SBATCH -N {self.nodes}",
-            f"#SBATCH -n {self.ntasks_per_node}",
-            f"#SBATCH -p {self.partition}",
+            f"#SBATCH -J {job_name}",
+            f"#SBATCH -N {nodes}",
+            f"#SBATCH -n {ntasks_per_node}",
+            f"#SBATCH -p {partition}",
             f"#SBATCH -o {self.work_dir}/slurm.%A.out",
         ]
 
         return "\n".join(header_lines)
 
-    def generate_script(self):
+    def generate_script(self, job_name, nodes, ntasks_per_node, partition):
 
-        slurm_script_content = self.gen_header()
+        slurm_script_content = self.gen_header(job_name, nodes, ntasks_per_node, partition)
         slurm_script_content += "\n\n" + "\n".join(self.commands)
 
-        script_path = os.path.join(self.work_dir, self.script_name)
-        with open(script_path, "w") as script_file:
-            script_file.write(slurm_script_content)
+        script_file = os.path.join(self.work_dir, self.script_name)
+        with open(script_file, "w") as f:
+            f.write(slurm_script_content)
 
-        print(f"SLURM script generated at: {script_path}")
+        script_path = os.path.dirname(script_file)
+
         return script_path
 
     def submit_job(self):
@@ -61,8 +54,14 @@ class PEMDSlurm:
         script_path = os.path.join(self.work_dir, self.script_name)
         try:
             result = subprocess.run(f"sbatch {script_path}", shell=True, check=True, text=True, capture_output=True)
-            print(f"SLURM job submitted: {result.stdout.strip()}")
-            return result.stdout
+            job_id = result.stdout.strip().split()[-1]
+            print(f"SLURM job submitted: Job ID is {job_id}")
+            return job_id
         except subprocess.CalledProcessError as e:
             print(f"Error submitting SLURM job: {e}")
-            return e.stderr
+            return None
+
+
+
+
+

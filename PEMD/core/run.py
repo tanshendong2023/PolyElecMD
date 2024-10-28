@@ -17,12 +17,62 @@ from PEMD.simulation.qm import (
     calc_resp_gaussian
 )
 from PEMD.simulation.sim_lib import (
+    order_energy_xtb,
     read_xyz_file
 )
 
 from PEMD.simulation.md import (
     gen_poly_gmx_oplsaa,
 )
+
+class ConformerSearch:
+
+    def __init__(self, work_dir, smiles, epsilon, ):
+        self.work_dir = work_dir
+        self.smiles = smiles
+        self.epsilon = epsilon
+
+    def search_by_xtb(self, max_conformers=1000, top_n_MMFF=100, slurm=True, job_name='xtb', nodes=1,
+                     ntasks_per_node=32, partition='interactive', ):
+
+        return conformer_search_xtb(
+            self.work_dir,
+            self.smiles,
+            self.epsilon,
+            max_conformers,
+            top_n_MMFF,
+            slurm,
+            job_name,
+            nodes,
+            ntasks_per_node,
+            partition,
+        )
+
+    def order_energy_xtb(self, numconf, ):
+
+            return order_energy_xtb(
+                self.work_dir,
+                numconf,
+            )
+
+    def search_by_gaussian(self, xyz_file, core, memory, function, basis_set, chg, mult, ):
+
+        sorted_gaussian_file, lowest_energy_structure_file = conformer_search_gaussian(
+            xyz_file,
+            core,
+            memory,
+            function,
+            basis_set,
+            chg,
+            mult,
+            self.epsilon
+        )
+
+        return sorted_gaussian_file, lowest_energy_structure_file
+
+
+
+
 
 class PEMDSimulation:
 

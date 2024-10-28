@@ -17,95 +17,27 @@ from PEMD.simulation import sim_lib
 from PEMD.model import model_lib
 from importlib import resources
 from PEMD.simulation.xtb import PEMDXtb
+from PEMD.simulation.slurm import PEMDSlurm
 
-def unit_conformer_search_crest(
-        mol,
-        unit_name,
-        out_dir,
-        length,
-        numconf = 10,
-        core= 32,
-):
 
-    os.makedirs(out_dir, exist_ok=True)
-
-    mol2 = Chem.AddHs(mol)
-    NAttempt = 100000
-
-    cids = []
-    for i in range(10):
-        cids = AllChem.EmbedMultipleConfs(
-            mol2,
-            numConfs=10,
-            numThreads=64,
-            randomSeed=i,
-            maxAttempts=NAttempt,
-        )
-
-        if len(cids) > 0:
-            break
-
-    cid = cids[0]
-    AllChem.UFFOptimizeMolecule(mol2, confId=cid)
-
-    file_base = '{}_N{}'.format(unit_name, length)
-    pdb_file = os.path.join(out_dir, file_base + '.pdb')
-    xyz_file = os.path.join(out_dir, file_base + '.xyz')
-
-    Chem.MolToPDBFile(mol2, pdb_file, confId=cid)
-    Chem.MolToXYZFile(mol2, xyz_file, confId=cid)
-
-    crest_dir = os.path.join(out_dir, 'crest_work')
-    os.makedirs(crest_dir, exist_ok=True)
-    origin_dir = os.getcwd()
-    os.chdir(crest_dir)
-
-    xyz_file_path = os.path.join(origin_dir, xyz_file)
-
-    slurm = Slurm(
-        J='crest',
-        N=1,
-        n=f'{core}',
-        output='slurm.%A.out'
-    )
-
-    job_id = slurm.sbatch(f'crest {xyz_file_path} --gfn2 --T {core} --niceprint')
-    time.sleep(10)
-
-    while True:
-        status = sim_lib.get_slurm_job_status(job_id)
-        if status in ['COMPLETED', 'FAILED', 'CANCELLED']:
-            print("crest finish, executing the gaussian task...")
-            order_structures = sim_lib.order_energy_xtb('crest_conformers.xyz', numconf)
-            break
-        else:
-            print("crest conformer search not finish, waiting...")
-            time.sleep(30)
-
-    os.chdir(origin_dir)
-    return order_structures
-
-def conformer_search_xtb(
+# Input: smiles (str)
+# Output: a xyz file
+# Description: Generates multiple conformers for a molecule from a SMILES string, optimizes them using the MMFF94
+# force field, and saves the optimized conformers to a single XYZ file.
+def gen_conf_rdkit(
+        work_dir,
         smiles,
-        epsilon,
         max_conformers=1000,
-        top_n_MMFF=100,
-        top_n_xtb=10,
+        top_n_MMFF=100
 ):
-    current_path = os.getcwd()
 
-    conf_dir = os.path.join(current_path, 'conformer_search')
-    xtb_dir = os.path.join(conf_dir, 'xtb_work')
-
-    os.makedirs(conf_dir, exist_ok=True)
-    os.makedirs(xtb_dir, exist_ok=True)
-
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"Invalid SMILES string generated: {smiles}")
-    mol = Chem.AddHs(mol)
+    # build dir
+    rdkit_dir = os.path.join(work_dir, 'conformer_search', 'rdkit_work')
+    os.makedirs(rdkit_dir, exist_ok=True)
 
     # Generate multiple conformers
+    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.AddHs(mol)
     ids = AllChem.EmbedMultipleConfs(mol, numConfs=max_conformers, randomSeed=1)
     props = AllChem.MMFFGetMoleculeProperties(mol)
 
@@ -120,29 +52,95 @@ def conformer_search_xtb(
     minimized_conformers.sort(key=lambda x: x[1])
     top_conformers = minimized_conformers[:top_n_MMFF]
 
-    # Perform xTB optimization on the selected conformers
+    # save the top conformers to xyz files
     for conf_id, _ in top_conformers:
-        xyz_file = os.path.join(xtb_dir, f'conf_{conf_id}.xyz')
-        outfile_headname = f'conf_{conf_id}'
+        xyz_file = os.path.join(rdkit_dir, f'conf_{conf_id}.xyz')
         model_lib.mol_to_xyz(mol, conf_id, xyz_file)
-        PEMDXtb(xtb_dir, xyz_file, outfile_headname, epsilon).run_local()
-        time.sleep(10)
-
-    print('All xTB calculations finished, merging the xyz files...')
-    filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
-    merged_xtb_file = os.path.join(xtb_dir, 'merged_xtb.xyz')
-    with open(merged_xtb_file, 'w') as outfile:
+    filenames = glob.glob(os.path.join(rdkit_dir, '*.xyz'))
+    merged_file = os.path.join(rdkit_dir, 'merged.xyz')
+    with open(merged_file, 'w') as outfile:
         for fname in filenames:
             with open(fname, 'r') as infile:
                 outfile.write(infile.read())
+    return merged_file
 
-    # Call the modified order_energy_xtb function to sort structures by energy
-    sorted_xtb_file = os.path.join(xtb_dir, 'sorted_xtb.xyz')
-    sim_lib.order_energy_xtb(merged_xtb_file, top_n_xtb, sorted_xtb_file)
+def gen_cluster_ABCluster():
 
-    return sorted_xtb_file
+    pass
 
+# input: a xyz file
+# output:  a xyz file
+# Description: Sorts the conformers in a XYZ file by energy calculated by xTB and saves the sorted conformers to a
+# new file
+def conf_search_xtb(
+        work_dir,
+        xyz_file,
+        epsilon,
+        slurm=False,
+        job_name='xtb',
+        nodes=1,
+        ntasks_per_node=64,
+        partition='standard',
+):
+    # build dir
+    xtb_dir = os.path.join(work_dir, 'conformer_search', 'xtb_work')
+    os.makedirs(xtb_dir, exist_ok=True)
+
+    # read xyz file as a list of structures
+    structures = sim_lib.read_xyz_file(xyz_file)
+
+    # Perform xTB optimization on the selected conformers
+    for conf_id, structure in enumerate(structures):
+        xyz_file = os.path.join(xtb_dir, f'conf_{conf_id}.xyz')
+        outfile_headname = f'conf_{conf_id}'
+        with open(xyz_file, 'w') as file:
+            num_atoms = structure['num_atoms']
+            comment = structure['comment']
+            atoms = structure['atoms']
+
+            file.write(f"{num_atoms}\n{comment}\n")
+
+            for atom in atoms:
+                file.write(f"{atom}\n")
+
+        if slurm == False:
+            xtb = PEMDXtb(
+                xtb_dir,
+                xyz_file,
+                outfile_headname,
+                epsilon
+            )
+            xtb.run_local()
+        else:
+            xtb  = PEMDXtb(
+                xtb_dir,
+                xyz_file,
+                outfile_headname,
+                epsilon
+            )
+            script_name = f'sub.xtb_{conf_id}'
+            xtb.gen_slurm(
+                script_name,
+                job_name,
+                nodes,
+                ntasks_per_node,
+                partition
+            )
+
+    print(f"XTB sybmit script generated successfually!!!")
+    filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
+    merged_file = os.path.join(xtb_dir, 'merged.xyz')
+    with open(merged_file, 'w') as outfile:
+        for fname in filenames:
+            with open(fname, 'r') as infile:
+                outfile.write(infile.read())
+    return merged_file
+
+# input: a xyz file
+# output: a xyz file
+# description:
 def conformer_search_gaussian(
+        work_dir,
         xyz_file,
         core = 32,
         mem = '64GB',
@@ -153,11 +151,7 @@ def conformer_search_gaussian(
         epsilon=5.0,
 ):
 
-    current_path = os.getcwd()
-    conf_dir = os.path.join(current_path, 'conformer_search')
-    gaussian_dir = os.path.join(conf_dir, 'conf_g16_work')
-
-    os.makedirs(conf_dir, exist_ok=True)
+    gaussian_dir = os.path.join(work_dir, 'conformer_search', 'gaussian_work')
     os.makedirs(gaussian_dir, exist_ok=True)
 
     structures = sim_lib.read_xyz_file(xyz_file)

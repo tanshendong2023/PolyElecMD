@@ -6,7 +6,9 @@
 # ******************************************************************************
 
 import os
+import re
 import time
+import glob
 import subprocess
 import numpy as np
 from rdkit import Chem
@@ -38,63 +40,89 @@ def get_slurm_job_status(job_id):
         return 'RUNNING'
 
 # Modified order_energy_xtb function
-def order_energy_xtb(file_path, numconf, output_file):
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
+def order_energy_xtb(work_dir, numconf):
+
+    xtb_dir = os.path.join(work_dir, 'conformer_search', 'xtb_work')
+    filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
+
+    if not filenames:
+        print("No .xtbopt.xyz files found.")
+        return None
+
+    merged_xtb_file = os.path.join(xtb_dir, 'merged_xtb.xyz')
+    with open(merged_xtb_file, 'w') as outfile:
+        for fname in filenames:
+            with open(fname, 'r') as infile:
+                outfile.write(infile.read())
+
+    sorted_xtb_file = os.path.join(xtb_dir, 'sorted_xtb.xyz')
 
     structures = []
     current_structure = []
-    is_first_line = True  # Indicates if we are at the start of the file
 
-    for line in lines:
-        line = line.strip()
-        if line.isdigit() and (is_first_line or current_structure):
-            if current_structure and not is_first_line:
-                energy_line = current_structure[1]  # Second line contains energy information
-                try:
-                    energy = float(energy_line.split()[-1])
-                except ValueError:
-                    print(f"Could not parse energy value: {energy_line}")
-                    energy = float('inf')  # Assign infinite energy if parsing fails
-                structures.append((energy, current_structure))
-            current_structure = [line]  # Start a new structure
-            is_first_line = False
-        else:
-            current_structure.append(line)
+    with open(merged_xtb_file, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if line.isdigit():
+                if current_structure:
+                    if len(current_structure) >= 2:
+                        energy_line = current_structure[1]
+                        try:
+                            energy_match = re.search(r"[-+]?\d*\.\d+|\d+", energy_line)
+                            if energy_match:
+                                energy = float(energy_match.group())
+                            else:
+                                raise ValueError("No numeric value found")
+                        except ValueError:
+                            print(f"Could not parse energy value: {energy_line}")
+                            energy = float('inf')
+                        structures.append((energy, current_structure))
+                    else:
+                        print("Malformed structure encountered.")
+                    current_structure = []
+                current_structure.append(line)
+            else:
+                current_structure.append(line)
 
-    # Add the last structure
+    # 处理最后一个结构
     if current_structure:
-        energy_line = current_structure[1]
-        try:
-            energy = float(energy_line.split()[-1])
-        except ValueError:
-            print(f"Could not parse energy value: {energy_line}")
-            energy = float('inf')
-        structures.append((energy, current_structure))
+        if len(current_structure) >= 2:
+            energy_line = current_structure[1]
+            try:
+                energy_match = re.search(r"[-+]?\d*\.\d+|\d+", energy_line)
+                if energy_match:
+                    energy = float(energy_match.group())
+                else:
+                    raise ValueError("No numeric value found")
+            except ValueError:
+                print(f"Could not parse energy value: {energy_line}")
+                energy = float('inf')
+            structures.append((energy, current_structure))
+        else:
+            print("Malformed structure encountered.")
 
-    # Sort structures by energy
+    # 根据能量排序
     structures.sort(key=lambda x: x[0])
 
-    # Select the lowest energy structures
+    # 选择最低能量的结构
     selected_structures = structures[:numconf]
 
-    # Write the selected structures to the output .xyz file
-    with open(output_file, 'w') as outfile:
-        for idx, (energy, structure) in enumerate(selected_structures):
+    # 写入到输出文件
+    with open(sorted_xtb_file, 'w') as outfile:
+        for energy, structure in selected_structures:
             for line_num, line in enumerate(structure):
                 if line_num == 1:
-                    # Modify the comment line to include the energy value
                     outfile.write(f"Energy = {energy}\n")
                 else:
                     outfile.write(f"{line}\n")
 
-    print(f"The lowest {numconf} energy structures have been written to {output_file}")
+    print(f"The lowest {numconf} energy structures have been written to {sorted_xtb_file}")
+    return sorted_xtb_file
 
+# input: a xyz file
+# output: a list store the xyz structure
+# Description: read the xyz file and store the structure in a list
 def read_xyz_file(file_path):
-    """
-    读取 .xyz 文件，返回一个结构列表。
-    每个结构是一个包含原子数、注释行和原子坐标的字典。
-    """
     structures = []
     with open(file_path, 'r') as f:
         lines = f.readlines()
