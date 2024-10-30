@@ -148,7 +148,7 @@ if __name__ == '__main__':
     }
 
     run_start = 0
-    run_end = 1001  # frames
+    run_end = 10001  # frames
     time_step = 0.001  # ps per MD step
     dt_collection = 5000  # MD steps between frames
     time_per_frame = time_step * dt_collection  # ps per frame
@@ -174,11 +174,10 @@ if __name__ == '__main__':
     times = times_array(run, run_start, run_end, time_step=5)
 
     # 定义距离和选择字典
-    distance_dict = {"polymer": 3.7, "anion": 3.5, 'SN':3.7}
+    distance_dict = {"anion": 3.5, 'SN':3.7}
     select_dict = {
         "cation": "resname LIP and name Li",
         "anion": "resname NSC and name OBT",
-        "polymer": "resname MOL and name O",
         "SN": 'resname SN and name N'
     }
 
