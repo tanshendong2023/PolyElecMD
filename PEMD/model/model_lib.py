@@ -48,6 +48,7 @@ def rdkitmol2xyz(unit_name, m, out_dir, IDNum):
         obConversion.WriteFile(mol, out_dir + '/' + unit_name + '.xyz')
 
 def smile_toxyz(name, SMILES, ):
+    # Generate XYZ file from SMILES
     m1 = Chem.MolFromSmiles(SMILES)    # Get mol(m1) from smiles
     m2 = Chem.AddHs(m1)   # Add H
     AllChem.Compute2DCoords(m2)    # Get 2D coordinates
@@ -59,6 +60,7 @@ def smile_toxyz(name, SMILES, ):
     return file_name
 
 def FetchDum(smiles):
+    # Get index of dummy atoms and bond type associated with it
     m = Chem.MolFromSmiles(smiles)
     dummy_index = []
     bond_type = None
@@ -76,6 +78,7 @@ def FetchDum(smiles):
     return dummy_index, str(bond_type)
 
 def connec_info(name):
+    # Collect valency and connecting information for each atom according to XYZ coordinates
     obConversion = ob.OBConversion()
     obConversion.SetInFormat("xyz")
     mol = ob.OBMol()
@@ -92,22 +95,16 @@ def connec_info(name):
     neigh_atoms_info = pd.DataFrame(neigh_atoms_info, columns=['NeiAtom', 'BO'])
     return neigh_atoms_info
 
-def Init_info(poly_name, smiles_mid, length, ):
-    # Get index of dummy atoms and bond type associated with it
+def Init_info(poly_name, smiles_mid ):
+    # Get index of dummy atoms and atoms associated with them
     dum_index, bond_type = FetchDum(smiles_mid)
     dum1 = dum_index[0]
     dum2 = dum_index[1]
 
     # Assign dummy atom according to bond type
     dum = None
-    oligo_list = []
-    unit_dis = None
     if bond_type == 'SINGLE':
-        dum, unit_dis = 'Cl', -0.17
-        oligo_list = [length]
-    elif bond_type == 'DOUBLE':
-        dum, unit_dis = 'O', 0.25
-        oligo_list = []
+        dum = 'Cl'
 
     # Replace '*' with dummy atom
     smiles_each = smiles_mid.replace(r'*', dum)
@@ -118,50 +115,51 @@ def Init_info(poly_name, smiles_mid, length, ):
         smiles_each,       # Replace '*' with dummy atom
     )
 
-    # Collect valency and connecting information for each atom
+    # Collect valency and connecting information for each atom according to XYZ coordinates
     neigh_atoms_info = connec_info(xyz_filename)
 
     # Find connecting atoms associated with dummy atoms.
-    # dum1 and dum2 are connected to atom1 and atom2, respectively.
+    # Dum1 and dum2 are connected to atom1 and atom2, respectively.
     atom1 = neigh_atoms_info['NeiAtom'][dum1].copy()[0]
     atom2 = neigh_atoms_info['NeiAtom'][dum2].copy()[0]
 
     return dum1, dum2, atom1, atom2,
 
 def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length, smiles_LCap_, smiles_RCap_, ):
+    # Connect the units and caps to obtain SMILES structure
     input_mol = Chem.MolFromSmiles(smiles_each)
-
     edit_m1 = Chem.EditableMol(input_mol)
     edit_m2 = Chem.EditableMol(input_mol)
     edit_m3 = Chem.EditableMol(input_mol)
 
-    edit_m1.RemoveAtom(dum2)
+    edit_m1.RemoveAtom(dum2) # Delete dum2
     mol_without_dum1 = Chem.Mol(edit_m1.GetMol())
 
-    edit_m2.RemoveAtom(dum1)
+    edit_m2.RemoveAtom(dum1) # Delete dum1
     mol_without_dum2 = Chem.Mol(edit_m2.GetMol())
 
-    edit_m3.RemoveAtom(dum1)
-    if dum1 < dum2:
+    edit_m3.RemoveAtom(dum1) # Delete dum1 and dum2
+    if dum1 < dum2: # If dum1 < dum2, then the index of dum2 is dum2 - 1
         edit_m3.RemoveAtom(dum2 - 1)
     else:
         edit_m3.RemoveAtom(dum2)
     monomer_mol = edit_m3.GetMol()
     inti_mol = monomer_mol
 
+    # After removing dummy atoms,adjust the order and set first_atom and second_atom to represent connecting atoms
     if atom1 > atom2:
         atom1, atom2 = atom2, atom1
 
     if dum1 < atom1 and dum2 < atom1:
         first_atom = atom1 - 2
-    elif (dum1 < atom1 and dum2 > atom1) or (dum1 > atom1 and dum2 < atom1):
+    elif (dum1 < atom1 < dum2) or (dum1 > atom1 > dum2):
         first_atom = atom1 - 1
     else:
         first_atom = atom1
 
     if dum1 < atom2 and dum2 < atom2:
         second_atom = atom2 - 2
-    elif (dum1 < atom2 and dum2 > atom2) or (dum1 > atom2 and dum2 < atom2):
+    elif (dum1 < atom2 < dum2) or (dum1 > atom2 > dum2):
         second_atom = atom2 - 1
     else:
         second_atom = atom2
@@ -170,10 +168,11 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length
 
         inti_mol3 = input_mol
 
+    # Connect the units
     elif length > 1:
 
         if length > 2:
-            for i in range(1, length - 2):
+            for i in range(1, length - 2):      # Fist connect middle n-2 units
                 combo = Chem.CombineMols(inti_mol, monomer_mol)
                 edcombo = Chem.EditableMol(combo)
                 edcombo.AddBond(
@@ -181,25 +180,30 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length
                     first_atom + i * monomer_mol.GetNumAtoms(),
                     order=Chem.rdchem.BondType.SINGLE,
                 )
+                # Add bond according to the index of atoms to be connected
 
                 inti_mol = edcombo.GetMol()
 
             inti_mol1 = inti_mol
 
-            combo = Chem.CombineMols(mol_without_dum1, inti_mol1)
+            combo = Chem.CombineMols(mol_without_dum1, inti_mol1)   # Connect the leftmost unit
             edcombo = Chem.EditableMol(combo)
             edcombo.AddBond(
                 atom2,
                 first_atom + mol_without_dum1.GetNumAtoms(),
                 order=Chem.rdchem.BondType.SINGLE
             )
+            # print(atom2)
+            # print(first_atom + mol_without_dum1.GetNumAtoms())
             inti_mol2 = edcombo.GetMol()
 
-            combo = Chem.CombineMols(inti_mol2, mol_without_dum2)
+            combo = Chem.CombineMols(inti_mol2, mol_without_dum2)   # Connect the rightmost unit
             edcombo = Chem.EditableMol(combo)
+            # print(atom2 + inti_mol1.GetNumAtoms())
+            # print(first_atom + inti_mol2.GetNumAtoms())
             edcombo.AddBond(
                 atom2 + inti_mol1.GetNumAtoms(),
-                atom1 + inti_mol1.GetNumAtoms() + atom2,
+                first_atom + inti_mol2.GetNumAtoms(),
                 order=Chem.rdchem.BondType.SINGLE
             )
             inti_mol3 = edcombo.GetMol()
@@ -214,6 +218,7 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length
             )
             inti_mol3 = edcombo.GetMol()
 
+    # Obtain the SMILES with cap
     main_mol_noDum = gen_smiles_with_cap(
         poly_name,
         inti_mol3,
@@ -227,25 +232,21 @@ def gen_oligomer_smiles(poly_name, dum1, dum2, atom1, atom2, smiles_each, length
 
 def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCap_, smiles_RCap_):
 
-    # main_chain
+    # Add cap to main chain
     main_mol_Dum = inti_mol
 
     # Left Cap
     if not smiles_LCap_:
         # Decide whether to cap with H or CH3
         first_atom_obj = main_mol_Dum.GetAtomWithIdx(first_atom)
-        atomic_num = first_atom_obj.GetAtomicNum()
-        degree = first_atom_obj.GetDegree()
+        atomic_num = first_atom_obj.GetAtomicNum() # Find its element
+        degree = first_atom_obj.GetDegree() # Find the number of bonds associated with it
         num_implicit_hs = first_atom_obj.GetNumImplicitHs()
         num_explicit_hs = first_atom_obj.GetNumExplicitHs()
-        total_hs = num_implicit_hs + num_explicit_hs
+        total_hs = num_implicit_hs + num_explicit_hs # Find the number of hydrogen associated with it
 
         if atomic_num == 6 and degree == 2 and total_hs == 2:
-            # It's a -CH2- group, cap with H
-            edmol = Chem.RWMol(main_mol_Dum)
-            h_idx = edmol.AddAtom(Chem.Atom(1))  # Add hydrogen atom
-            edmol.AddBond(first_atom, h_idx, order=Chem.rdchem.BondType.SINGLE)
-            main_mol_Dum = edmol.GetMol()
+            pass
         else:
             # Cap with CH3
             cap_mol = Chem.MolFromSmiles('C')
@@ -254,13 +255,14 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
             edcombo = Chem.EditableMol(combo)
             edcombo.AddBond(0, cap_add + first_atom, order=Chem.rdchem.BondType.SINGLE)
             main_mol_Dum = edcombo.GetMol()
+            second_atom += cap_add  # adjust the index of second_atom
+
     else:
         # Existing code for handling Left Cap
         (
             unit_name,
             dum_L,
             atom_L,
-            m1L,
             neigh_atoms_info_L,
             flag_L
         ) = Init_info_Cap(
@@ -282,7 +284,6 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
         # Mol without dummy atom
         LCap_m1 = LCap_edit_m1.GetMol()
         LCap_add = LCap_m1.GetNumAtoms()
-
         # Linking atom
         if dum_L < atom_L:
             LCap_atom = atom_L - 1
@@ -296,6 +297,7 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
             LCap_atom, first_atom + LCap_add, order=Chem.rdchem.BondType.SINGLE
         )
         main_mol_Dum = edcombo.GetMol()
+        second_atom += LCap_add     # adjust the index of second_atom
 
     # Right Cap
     if not smiles_RCap_:
@@ -308,11 +310,7 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
         total_hs = num_implicit_hs + num_explicit_hs
 
         if atomic_num == 6 and degree == 2 and total_hs == 2:
-            # It's a -CH2- group, cap with H
-            edmol = Chem.RWMol(main_mol_Dum)
-            h_idx = edmol.AddAtom(Chem.Atom(1))  # Add hydrogen atom
-            edmol.AddBond(second_atom, h_idx, order=Chem.rdchem.BondType.SINGLE)
-            main_mol_Dum = edmol.GetMol()
+            pass
         else:
             # Cap with CH3
             cap_mol = Chem.MolFromSmiles('C')
@@ -331,7 +329,6 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
             unit_name,
             dum_R,
             atom_R,
-            m1L,
             neigh_atoms_info_R,
             flag_R
         ) = Init_info_Cap(
@@ -369,7 +366,7 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
         )
         main_mol_Dum = edcombo.GetMol()
 
-    # Remove dummy atoms (virtual atoms marked as [*])
+    # Remove remain dummy atoms (virtual atoms marked as [*])
     atoms_to_remove = []
 
     for atom in main_mol_Dum.GetAtoms():
@@ -378,7 +375,7 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
 
     # Create a new editable molecule to remove the atoms
     edmol_final = Chem.RWMol(main_mol_Dum)
-
+    # Reverse traversal to prevent index changes
     for atom_idx in reversed(atoms_to_remove):
         edmol_final.RemoveAtom(atom_idx)
 
@@ -388,7 +385,7 @@ def gen_smiles_with_cap(poly_name, inti_mol, first_atom, second_atom, smiles_LCa
     return main_mol_noDum
 
 def Init_info_Cap(unit_name, smiles_each_ori):
-    # Get index of dummy atoms and bond type associated with it
+    # Get index of dummy atoms and bond type associated with it in cap
     try:
         dum_index, bond_type = FetchDum(smiles_each_ori)
         if len(dum_index) == 1:
@@ -398,16 +395,16 @@ def Init_info_Cap(unit_name, smiles_each_ori):
                 unit_name,
                 ": There are more or less than one dummy atoms in the SMILES string; ",
             )
-            return unit_name, 0, 0, 0, 0, 'REJECT'
+            return unit_name, 0, 0, 0, 'REJECT'
     except Exception:
         print(
             unit_name,
             ": Couldn't fetch the position of dummy atoms. Hints: (1) In SMILES string, use '*' for a dummy atom,"
             "(2) Check RDKit installation.",
         )
-        return unit_name, 0, 0, 0, 0, 'REJECT'
+        return unit_name, 0, 0, 0, 'REJECT'
 
-    # Replace '*' with dummy atom
+    # Replace '*' with dummy atom to find atoms associated with it
     smiles_each = smiles_each_ori.replace(r'*', 'Cl')
 
     # Convert SMILES to XYZ coordinates
@@ -420,7 +417,7 @@ def Init_info_Cap(unit_name, smiles_each_ori):
             ": Couldn't get XYZ coordinates from SMILES string. Hints: (1) Check SMILES string,"
             "(2) Check RDKit installation.",
         )
-        return unit_name, 0, 0, 0, 0, 'REJECT'
+        return unit_name, 0, 0, 0, 'REJECT'
 
     # Collect valency and connecting information for each atom
     neigh_atoms_info = connec_info('./' + unit_name + '.xyz')
@@ -436,12 +433,11 @@ def Init_info_Cap(unit_name, smiles_each_ori):
             ": Couldn't get the position of connecting atoms. Hints: (1) XYZ coordinates are not acceptable,"
             "(2) Check Open Babel installation.",
         )
-        return unit_name, 0, 0, 0, 0, 'REJECT'
+        return unit_name, 0, 0, 0, 'REJECT'
     return (
         unit_name,
         dum1,
         atom1,
-        # m1,
         neigh_atoms_info,
         '',
     )
@@ -957,6 +953,5 @@ def extract_structure(partition, module_soft, tpr_file, xtc_file, save_gro_file,
         # 错误处理：打印错误输出并返回None
         print(f"Error executing command: {e.stderr}")
         return None
-
 
 

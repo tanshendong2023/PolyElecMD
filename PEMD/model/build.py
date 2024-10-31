@@ -56,7 +56,7 @@ def calc_poly_length(total_mass_polymer, smiles_repeating_unit, smiles_leftcap, 
     return length
 
 def gen_poly_smiles(poly_name, repeating_unit, length, leftcap, rightcap,):
-
+    # Generate the SMILES representation of the polymer.
     (
         dum1,
         dum2,
@@ -65,7 +65,6 @@ def gen_poly_smiles(poly_name, repeating_unit, length, leftcap, rightcap,):
     ) = model_lib.Init_info(
         poly_name,
         repeating_unit,
-        length,
     )
 
     smiles_poly = model_lib.gen_oligomer_smiles(
@@ -236,6 +235,5 @@ def run_packmol(out_dir, input_file='pack.inp', output_file='pack.out'):
     finally:
         # Change back to the original working directory
         os.chdir(current_path)
-
 
 
