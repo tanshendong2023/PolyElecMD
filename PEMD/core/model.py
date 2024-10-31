@@ -16,18 +16,6 @@ from PEMD.model.build import (
 
 class PEMDModel:
     def __init__(self, poly_name, repeating_unit, leftcap, rightcap, length_short, length_poly, ):
-        """
-        Initialize a PEMDModel instance.
-
-        Parameters:
-        poly_name (str): The name of the polymer.
-        repeating_unit (str): The structure of the polymer's repeating unit.
-        leftcap (str): The left cap structure of the polymer.
-        rightcap (str): The right cap structure of the polymer.
-        length_short (int): The length of the short polymer.
-        length_poly (int): The length of the long polymer.
-        """
-
         self.poly_name = poly_name
         self.repeating_unit = repeating_unit
         self.leftcap = leftcap
@@ -37,16 +25,6 @@ class PEMDModel:
 
     @classmethod
     def from_json(cls, work_dir, json_file):
-        """
-        Create a PEMDModel instance from a JSON file.
-
-        Parameters:
-        work_dir (str): The working directory where the JSON file is located.
-        json_file (str): The name of the JSON file.
-
-        Returns:
-        PEMDModel: The created PEMDModel instance.
-        """
 
         json_path = os.path.join(work_dir, json_file)
         with open(json_path, 'r', encoding='utf-8') as file:
@@ -62,15 +40,6 @@ class PEMDModel:
         return cls(poly_name, repeating_unit, leftcap, rightcap, length_short, length_poly)
 
     def gen_poly_smiles(self, short=False):
-        """
-        Generate the SMILES representation of the polymer.
-
-        Parameters:
-        short (bool): If True, generate the SMILES for the short polymer; if False, generate the SMILES for the long polymer.
-
-        Returns:
-        str: The generated SMILES string.
-        """
 
         if short:
             return gen_poly_smiles(
@@ -84,9 +53,9 @@ class PEMDModel:
             return gen_poly_smiles(
                 self.poly_name,
                 self.repeating_unit,
-                self.length_poly,
                 self.leftcap,
                 self.rightcap,
+                self.length_poly,
             )
 
     # def build_polymer(self,):
