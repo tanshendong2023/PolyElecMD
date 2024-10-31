@@ -9,6 +9,13 @@
           </advancedOptions>
         </fileTransfer>
       </webServer>
+      <webServer id="57247926-bf49-4c06-8d42-5368efb5ad11" name="tsd@10.103.65.21:22 agent">
+        <fileTransfer rootFolder="/home/tsd/soft/pycharm/PEMD" accessType="SFTP" host="10.103.65.21" port="22" sshConfigId="e9ef53f3-e821-48e5-b61d-a6cca7b59175" sshConfig="tsd@10.103.65.21:22 agent" authAgent="true">
+          <advancedOptions>
+            <advancedOptions isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
     </option>
   </component>
 </project>

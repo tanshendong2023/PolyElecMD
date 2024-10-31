@@ -64,9 +64,6 @@ def gen_conf_rdkit(
                 outfile.write(infile.read())
     return merged_file
 
-def gen_cluster_ABCluster():
-
-    pass
 
 # input: a xyz file
 # output:  a xyz file
@@ -75,13 +72,16 @@ def gen_cluster_ABCluster():
 def conf_search_xtb(
         work_dir,
         xyz_file,
-        epsilon,
+        chg=0,
+        mult=1,
+        gfn=2,
         slurm=False,
         job_name='xtb',
         nodes=1,
         ntasks_per_node=64,
         partition='standard',
 ):
+
     # build dir
     xtb_dir = os.path.join(work_dir, 'conformer_search', 'xtb_work')
     os.makedirs(xtb_dir, exist_ok=True)
@@ -91,9 +91,9 @@ def conf_search_xtb(
 
     # Perform xTB optimization on the selected conformers
     for conf_id, structure in enumerate(structures):
-        xyz_file = os.path.join(xtb_dir, f'conf_{conf_id}.xyz')
+        conf_xyz_file = os.path.join(xtb_dir, f'conf_{conf_id}.xyz')
         outfile_headname = f'conf_{conf_id}'
-        with open(xyz_file, 'w') as file:
+        with open(conf_xyz_file, 'w') as file:
             num_atoms = structure['num_atoms']
             comment = structure['comment']
             atoms = structure['atoms']
@@ -103,21 +103,20 @@ def conf_search_xtb(
             for atom in atoms:
                 file.write(f"{atom}\n")
 
-        if slurm == False:
-            xtb = PEMDXtb(
-                xtb_dir,
-                xyz_file,
-                outfile_headname,
-                epsilon
-            )
+        # Create xtb object
+        xtb = PEMDXtb(
+            xtb_dir,
+            conf_xyz_file,
+            outfile_headname,
+            chg,
+            mult,
+            gfn
+        )
+
+        # Run xtb local or generate SLURM script
+        if not slurm:
             xtb.run_local()
         else:
-            xtb  = PEMDXtb(
-                xtb_dir,
-                xyz_file,
-                outfile_headname,
-                epsilon
-            )
             script_name = f'sub.xtb_{conf_id}'
             xtb.gen_slurm(
                 script_name,
@@ -127,25 +126,30 @@ def conf_search_xtb(
                 partition
             )
 
-    print(f"XTB sybmit script generated successfually!!!")
-    filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
-    merged_file = os.path.join(xtb_dir, 'merged.xyz')
-    with open(merged_file, 'w') as outfile:
-        for fname in filenames:
-            with open(fname, 'r') as infile:
-                outfile.write(infile.read())
-    return merged_file
+    if not slurm:
+        print("XTB run locally successfully!")
+        filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
+        merged_file = os.path.join(xtb_dir, 'merged.xyz')
+        with open(merged_file, 'w') as outfile:
+            for fname in filenames:
+                with open(fname, 'r') as infile:
+                    outfile.write(infile.read())
+        return merged_file
+    else:
+        print("XTB submit scripts generated successfully!")
+        return None  # Optionally return a list of script names or paths
+
 
 # input: a xyz file
 # output: a xyz file
 # description:
-def conformer_search_gaussian(
+def conf_search_gaussian(
         work_dir,
         xyz_file,
-        core = 32,
-        mem = '64GB',
-        function = 'B3LYP',
-        basis_set = '6-311+g(d,p)',
+        core=32,
+        mem='64GB',
+        function='B3LYP',
+        basis_set='6-311+g(d,p)',
         chg=0,
         mult=1,
         epsilon=5.0,
@@ -156,7 +160,7 @@ def conformer_search_gaussian(
 
     structures = sim_lib.read_xyz_file(xyz_file)
 
-    job_ids = []
+    # job_ids = []
     for i, structure in enumerate(structures):
 
         # 调用 QMcalc_gaussian 函数生成 Gaussian 输入文件
@@ -174,50 +178,50 @@ def conformer_search_gaussian(
             filename=filename
         )
 
-        slurm = Slurm(J='g16',
-                      N=1,
-                      n=f'{core}',
-                      output=f'{gaussian_dir}/slurm.%A.out'
-                      )
-
-        job_id = slurm.sbatch(f'g16 {gaussian_dir}/conf_{i + 1}.gjf')
-        time.sleep(1)
-        job_ids.append(job_id)
-
-    # check the status of the gaussian job
-    while True:
-        all_completed = True
-        for job_id in job_ids:
-            status = sim_lib.get_slurm_job_status(job_id)
-            if status not in ['COMPLETED', 'FAILED', 'CANCELLED']:
-                all_completed = False
-                break
-        if all_completed:
-            print("All gaussian tasks finished, order structure with energy calculated by gaussian...")
-            # order the structures by energy calculated by gaussian
-            sorted_gaussian_file = os.path.join(gaussian_dir, 'sorted_gaussian.xyz')
-            sim_lib.order_energy_gaussian(gaussian_dir, sorted_gaussian_file)
-            # 提取最低能量的结构并保存为单独的 .xyz 文件
-            lowest_energy_structure_file = os.path.join(gaussian_dir, 'lowest_energy_structure.xyz')
-            with open(sorted_gaussian_file, 'r') as infile, open(lowest_energy_structure_file, 'w') as outfile:
-                lines = infile.readlines()
-                i = 0
-                while i < len(lines):
-                    num_atoms_line = lines[i].strip()
-                    if num_atoms_line.isdigit():
-                        num_atoms = int(num_atoms_line)
-                        # 提取结构（原子数行 + 注释行 + 原子坐标行）
-                        structure_lines = lines[i:i + num_atoms + 2]
-                        outfile.writelines(structure_lines)
-                        break  # 只提取第一个（最低能量）结构
-                    else:
-                        i += 1  # 跳过非结构开始的行
-            print(f"Lowest energy structure saved to {lowest_energy_structure_file}")
-            break
-        else:
-            print("g16 conformer search not finish, waiting...")
-            time.sleep(10)  # wait for 10 seconds
-    return sorted_gaussian_file, lowest_energy_structure_file
+    #     slurm = Slurm(J='g16',
+    #                   N=1,
+    #                   n=f'{core}',
+    #                   output=f'{gaussian_dir}/slurm.%A.out'
+    #                   )
+    #
+    #     job_id = slurm.sbatch(f'g16 {gaussian_dir}/conf_{i + 1}.gjf')
+    #     time.sleep(1)
+    #     job_ids.append(job_id)
+    #
+    # # check the status of the gaussian job
+    # while True:
+    #     all_completed = True
+    #     for job_id in job_ids:
+    #         status = sim_lib.get_slurm_job_status(job_id)
+    #         if status not in ['COMPLETED', 'FAILED', 'CANCELLED']:
+    #             all_completed = False
+    #             break
+    #     if all_completed:
+    #         print("All gaussian tasks finished, order structure with energy calculated by gaussian...")
+    #         # order the structures by energy calculated by gaussian
+    #         sorted_gaussian_file = os.path.join(gaussian_dir, 'sorted_gaussian.xyz')
+    #         sim_lib.order_energy_gaussian(gaussian_dir, sorted_gaussian_file)
+    #         # 提取最低能量的结构并保存为单独的 .xyz 文件
+    #         lowest_energy_structure_file = os.path.join(gaussian_dir, 'lowest_energy_structure.xyz')
+    #         with open(sorted_gaussian_file, 'r') as infile, open(lowest_energy_structure_file, 'w') as outfile:
+    #             lines = infile.readlines()
+    #             i = 0
+    #             while i < len(lines):
+    #                 num_atoms_line = lines[i].strip()
+    #                 if num_atoms_line.isdigit():
+    #                     num_atoms = int(num_atoms_line)
+    #                     # 提取结构（原子数行 + 注释行 + 原子坐标行）
+    #                     structure_lines = lines[i:i + num_atoms + 2]
+    #                     outfile.writelines(structure_lines)
+    #                     break  # 只提取第一个（最低能量）结构
+    #                 else:
+    #                     i += 1  # 跳过非结构开始的行
+    #         print(f"Lowest energy structure saved to {lowest_energy_structure_file}")
+    #         break
+    #     else:
+    #         print("g16 conformer search not finish, waiting...")
+    #         time.sleep(10)  # wait for 10 seconds
+    # return sorted_gaussian_file, lowest_energy_structure_file
 
 def QMcalc_gaussian(
         structure,
@@ -236,7 +240,7 @@ def QMcalc_gaussian(
     file_contents = f"%nprocshared={core}\n"
     file_contents += f"%mem={mem}\n"
     file_contents += f"# opt freq {function} {basis_set} em=GD3BJ scrf=(pcm,solvent=generic,read)\n\n"
-    file_contents += 'conformer search\n\n'
+    file_contents += 'qm calculation\n\n'
     file_contents += f'{chg} {mult}\n'  # 电荷和多重态
     for atom in structure[2:]:  # 包含原子坐标
         file_contents += (f"{atom.split()[0]:<2} {atom.split()[1]:>15} {atom.split()[2]:>15} "

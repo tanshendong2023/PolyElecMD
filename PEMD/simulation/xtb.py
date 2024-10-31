@@ -15,24 +15,24 @@ class PEMDXtb:
             work_dir,
             xyz_filename,
             outfile_headname,
-            epsilon,
             chg=0,
-            mult=1
+            mult=1,
+            gfn=2
     ):
 
         self.work_dir = work_dir
         self.xyz_filename = xyz_filename
         self.xyz_filepath = os.path.join(work_dir, xyz_filename)
-        self.epsilon = epsilon
         self.chg = chg
         self.mult = mult
+        self.gfn = gfn
         self.outfile_headname = outfile_headname
 
     def run_local(self):
 
         command = (
-            f"xtb {self.xyz_filename} --opt --gbsa={self.epsilon} "
-            f"--chrg={self.chg} --uhf={self.mult} --ceasefiles --namespace {self.outfile_headname}"
+            f"xtb {self.xyz_filename} --opt --chrg={self.chg} --uhf={self.mult} --gfn {self.gfn}  --ceasefiles "
+            f"--namespace {self.work_dir}/{self.outfile_headname}"
         )
 
         try:
@@ -49,9 +49,10 @@ class PEMDXtb:
             script_name,
         )
 
+        # slurm_script.add_command(f"module load conda && conda activate foyer")
         slurm_script.add_command(
-            f"xtb {self.xyz_filename} --opt --gbsa={self.epsilon} "
-            f"--chrg={self.chg} --uhf={self.mult} --ceasefiles --namespace {self.work_dir}/{self.outfile_headname}"
+            f"xtb {self.xyz_filename} --opt --chrg={self.chg} --uhf={self.mult} --gfn {self.gfn}  --ceasefiles "
+            f"--namespace {self.work_dir}/{self.outfile_headname}"
         )
 
         # Generate the SLURM script
