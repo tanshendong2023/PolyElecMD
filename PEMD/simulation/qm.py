@@ -17,6 +17,7 @@ from PEMD.simulation import sim_lib
 from PEMD.model import model_lib
 from importlib import resources
 from PEMD.simulation.xtb import PEMDXtb
+from PEMD.simulation.gaussian import PEMDGaussian
 from PEMD.simulation.slurm import PEMDSlurm
 
 
@@ -27,8 +28,8 @@ from PEMD.simulation.slurm import PEMDSlurm
 def gen_conf_rdkit(
         work_dir,
         smiles,
-        max_conformers=1000,
-        top_n_MMFF=100
+        max_conformers,
+        top_n_MMFF
 ):
 
     # build dir
@@ -57,19 +58,19 @@ def gen_conf_rdkit(
         xyz_file = os.path.join(rdkit_dir, f'conf_{conf_id}.xyz')
         model_lib.mol_to_xyz(mol, conf_id, xyz_file)
     filenames = glob.glob(os.path.join(rdkit_dir, '*.xyz'))
-    merged_file = os.path.join(rdkit_dir, 'merged.xyz')
+    merged_file = os.path.join(work_dir, 'merged_rdkit.xyz')
     with open(merged_file, 'w') as outfile:
         for fname in filenames:
             with open(fname, 'r') as infile:
                 outfile.write(infile.read())
-    return merged_file
-
+    print(f"The generated conformers based on rdkit saved to {merged_file}")
+    # return merged_file
 
 # input: a xyz file
 # output:  a xyz file
 # Description: Sorts the conformers in a XYZ file by energy calculated by xTB and saves the sorted conformers to a
 # new file
-def conf_search_xtb(
+def opt_conf_xtb(
         work_dir,
         xyz_file,
         chg=0,
@@ -104,27 +105,30 @@ def conf_search_xtb(
                 file.write(f"{atom}\n")
 
         # Create xtb object
-        xtb = PEMDXtb(
-            xtb_dir,
-            conf_xyz_file,
-            outfile_headname,
-            chg,
-            mult,
-            gfn
-        )
+        if not slurm:
+            PEMDXtb(
+                work_dir,
+                chg,
+                mult,
+                gfn
+            ).run_local(
+                conf_xyz_file,
+                xtb_dir,
+                outfile_headname
+            )
 
         # Run xtb local or generate SLURM script
-        if not slurm:
-            xtb.run_local()
-        else:
-            script_name = f'sub.xtb_{conf_id}'
-            xtb.gen_slurm(
-                script_name,
-                job_name,
-                nodes,
-                ntasks_per_node,
-                partition
-            )
+        # if not slurm:
+        #     xtb.run_local()
+        # else:
+        #     script_name = f'sub.xtb_{conf_id}'
+        #     xtb.gen_slurm(
+        #         script_name,
+        #         job_name,
+        #         nodes,
+        #         ntasks_per_node,
+        #         partition
+        #     )
 
     if not slurm:
         print("XTB run locally successfully!")
@@ -136,23 +140,38 @@ def conf_search_xtb(
                     outfile.write(infile.read())
         return merged_file
     else:
+        script_name = f'sub.xtb'
+        PEMDXtb(
+            work_dir,
+            chg,
+            mult,
+            gfn
+        ).gen_slurm(
+            script_name,
+            job_name,
+            nodes,
+            ntasks_per_node,
+            partition
+        )
         print("XTB submit scripts generated successfully!")
-        return None  # Optionally return a list of script names or paths
-
+        # return xtb_dir   # Optionally return a list of script names or paths
 
 # input: a xyz file
 # output: a xyz file
 # description:
-def conf_search_gaussian(
+def opt_conf_gaussian(
         work_dir,
         xyz_file,
-        core=32,
-        mem='64GB',
-        function='B3LYP',
-        basis_set='6-311+g(d,p)',
         chg=0,
         mult=1,
+        function='B3LYP',
+        basis_set='6-311+g(d,p)',
         epsilon=5.0,
+        mem='64GB',
+        job_name='g16',
+        nodes=1,
+        ntasks_per_node=64,
+        partition='standard',
 ):
 
     gaussian_dir = os.path.join(work_dir, 'conformer_search', 'gaussian_work')
@@ -164,95 +183,34 @@ def conf_search_gaussian(
     for i, structure in enumerate(structures):
 
         # 调用 QMcalc_gaussian 函数生成 Gaussian 输入文件
-        filename = f"conf_{i + 1}.gjf"
-        QMcalc_gaussian(
-            structure=structure,
-            core=core,
-            mem=mem,
-            function=function,
-            basis_set=basis_set,
-            chg=chg,
-            mult=mult,
-            epsilon=epsilon,
-            gaussian_dir=gaussian_dir,
+        filename = f"conf_{i}.gjf"
+        Gau = PEMDGaussian(
+            gaussian_dir,
+            ntasks_per_node,
+            mem,
+            chg,
+            mult,
+            function,
+            basis_set,
+            epsilon,
+        )
+
+        Gau.generate_input_file(
+            work_dir,
+            structure,
             filename=filename
         )
 
-    #     slurm = Slurm(J='g16',
-    #                   N=1,
-    #                   n=f'{core}',
-    #                   output=f'{gaussian_dir}/slurm.%A.out'
-    #                   )
-    #
-    #     job_id = slurm.sbatch(f'g16 {gaussian_dir}/conf_{i + 1}.gjf')
-    #     time.sleep(1)
-    #     job_ids.append(job_id)
-    #
-    # # check the status of the gaussian job
-    # while True:
-    #     all_completed = True
-    #     for job_id in job_ids:
-    #         status = sim_lib.get_slurm_job_status(job_id)
-    #         if status not in ['COMPLETED', 'FAILED', 'CANCELLED']:
-    #             all_completed = False
-    #             break
-    #     if all_completed:
-    #         print("All gaussian tasks finished, order structure with energy calculated by gaussian...")
-    #         # order the structures by energy calculated by gaussian
-    #         sorted_gaussian_file = os.path.join(gaussian_dir, 'sorted_gaussian.xyz')
-    #         sim_lib.order_energy_gaussian(gaussian_dir, sorted_gaussian_file)
-    #         # 提取最低能量的结构并保存为单独的 .xyz 文件
-    #         lowest_energy_structure_file = os.path.join(gaussian_dir, 'lowest_energy_structure.xyz')
-    #         with open(sorted_gaussian_file, 'r') as infile, open(lowest_energy_structure_file, 'w') as outfile:
-    #             lines = infile.readlines()
-    #             i = 0
-    #             while i < len(lines):
-    #                 num_atoms_line = lines[i].strip()
-    #                 if num_atoms_line.isdigit():
-    #                     num_atoms = int(num_atoms_line)
-    #                     # 提取结构（原子数行 + 注释行 + 原子坐标行）
-    #                     structure_lines = lines[i:i + num_atoms + 2]
-    #                     outfile.writelines(structure_lines)
-    #                     break  # 只提取第一个（最低能量）结构
-    #                 else:
-    #                     i += 1  # 跳过非结构开始的行
-    #         print(f"Lowest energy structure saved to {lowest_energy_structure_file}")
-    #         break
-    #     else:
-    #         print("g16 conformer search not finish, waiting...")
-    #         time.sleep(10)  # wait for 10 seconds
-    # return sorted_gaussian_file, lowest_energy_structure_file
+        script_name = f'sub.gaussian'
+        Gau.gen_slurm(
+            script_name,
+            job_name,
+            nodes,
+            ntasks_per_node,
+            partition
+        )
 
-def QMcalc_gaussian(
-        structure,
-        core=32,
-        mem='64GB',
-        function='B3LYP',
-        basis_set='6-311+g(d,p)',
-        chg=0,
-        mult=1,
-        epsilon=5.0,
-        gaussian_dir='.',
-        filename='conf.gjf'
-    ):
-
-    # 构建 Gaussian 输入文件内容
-    file_contents = f"%nprocshared={core}\n"
-    file_contents += f"%mem={mem}\n"
-    file_contents += f"# opt freq {function} {basis_set} em=GD3BJ scrf=(pcm,solvent=generic,read)\n\n"
-    file_contents += 'qm calculation\n\n'
-    file_contents += f'{chg} {mult}\n'  # 电荷和多重态
-    for atom in structure[2:]:  # 包含原子坐标
-        file_contents += (f"{atom.split()[0]:<2} {atom.split()[1]:>15} {atom.split()[2]:>15} "
-                          f"{atom.split()[3]:>15}\n\n")
-    file_contents += f"eps={epsilon}\n"
-    file_contents += "epsinf=2.1\n"
-    file_contents += '\n\n'
-
-    # 创建 gjf 文件
-    file_path = os.path.join(gaussian_dir, filename)
-    with open(file_path, 'w') as file:
-        file.write(file_contents)
+    print("Gaussian input files generated successfully!")
 
 
 def calc_resp_gaussian(

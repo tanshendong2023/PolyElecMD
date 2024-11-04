@@ -11,13 +11,14 @@ from PEMD.model.build import (
     gen_poly_3D,
 )
 from PEMD.simulation.qm import (
-    conformer_search_xtb,
-    conformer_search_gaussian,
-    QMcalc_gaussian,
+    gen_conf_rdkit,
+    opt_conf_xtb,
+    opt_conf_gaussian,
     calc_resp_gaussian
 )
 from PEMD.simulation.sim_lib import (
     order_energy_xtb,
+    order_energy_gaussian,
     read_xyz_file
 )
 
@@ -27,20 +28,28 @@ from PEMD.simulation.md import (
 
 class ConformerSearch:
 
-    def __init__(self, work_dir, smiles, epsilon, ):
+    def __init__(self, work_dir, smiles,):
         self.work_dir = work_dir
         self.smiles = smiles
-        self.epsilon = epsilon
 
-    def search_by_xtb(self, max_conformers=1000, top_n_MMFF=100, slurm=True, job_name='xtb', nodes=1,
-                     ntasks_per_node=32, partition='interactive', ):
+    def gen_conf_rdkit(self, max_conformers, top_n_MMFF, ):
 
-        return conformer_search_xtb(
+        return gen_conf_rdkit(
             self.work_dir,
             self.smiles,
-            self.epsilon,
             max_conformers,
             top_n_MMFF,
+        )
+
+    def opt_conf_xtb(self, xyz_file, chg=0, mult=1, gfn=2, slurm=False, job_name='xtb', nodes=1, ntasks_per_node=64,
+                     partition='standard',):
+
+        return opt_conf_xtb(
+            self.work_dir,
+            xyz_file,
+            chg,
+            mult,
+            gfn,
             slurm,
             job_name,
             nodes,
@@ -48,78 +57,47 @@ class ConformerSearch:
             partition,
         )
 
-    def order_energy_xtb(self, numconf, ):
+    def order_energy_xtb(self, xyz_file, numconf):
 
             return order_energy_xtb(
+                self.work_dir,
+                xyz_file,
+                numconf,
+            )
+
+    def opt_conf_gaussian(self, xyz_file, chg, mult, function, basis_set, epsilon, memory, job_name, nodes,
+                          ntasks_per_node, partition,):
+
+        return opt_conf_gaussian(
+            self.work_dir,
+            xyz_file,
+            chg,
+            mult,
+            function,
+            basis_set,
+            epsilon,
+            memory,
+            job_name,
+            nodes,
+            ntasks_per_node,
+            partition,
+        )
+
+    def order_energy_gaussian(self, numconf):
+
+            return order_energy_gaussian(
                 self.work_dir,
                 numconf,
             )
 
-    def search_by_gaussian(self, xyz_file, core, memory, function, basis_set, chg, mult, ):
-
-        sorted_gaussian_file, lowest_energy_structure_file = conformer_search_gaussian(
-            xyz_file,
-            core,
-            memory,
-            function,
-            basis_set,
-            chg,
-            mult,
-            self.epsilon
-        )
-
-        return sorted_gaussian_file, lowest_energy_structure_file
 
 
 
 
 
-class PEMDSimulation:
 
-    def __init__(self, ):
-        pass
 
-    def conformer_search(self, smiles, epsilon, core, memory, function, chg, mult, basis_set, ):
 
-        xyz_file = conformer_search_xtb(
-            smiles,
-            epsilon,
-            max_conformers=1000,
-            top_n_MMFF=100,
-            top_n_xtb=10,
-        )
-
-        sorted_gaussian_file, lowest_energy_structure_file = conformer_search_gaussian(
-            xyz_file,
-            core,
-            memory,
-            function,
-            basis_set,
-            chg,
-            mult,
-            epsilon
-        )
-
-        return sorted_gaussian_file, lowest_energy_structure_file
-
-    def QM_calculation(self, input_xyzfile, core, memory, function, basis_set, chg, mult, epsilon, gaussian_dir, filename):
-
-        structure = read_xyz_file(input_xyzfile)
-
-        return QMcalc_gaussian(
-            structure,
-            core,
-            memory,
-            function,
-            basis_set,
-            chg,
-            mult,
-            epsilon,
-            gaussian_dir,
-            filename
-        )
-
-    # 生成提交脚本
 
 
 

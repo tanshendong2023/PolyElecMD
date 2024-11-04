@@ -40,27 +40,14 @@ def get_slurm_job_status(job_id):
         return 'RUNNING'
 
 # Modified order_energy_xtb function
-def order_energy_xtb(work_dir, numconf):
+def order_energy_xtb(work_dir, xyz_file, numconf):
 
-    xtb_dir = os.path.join(work_dir, 'conformer_search', 'xtb_work')
-    filenames = glob.glob(os.path.join(xtb_dir, '*.xtbopt.xyz'))
-
-    if not filenames:
-        print("No .xtbopt.xyz files found.")
-        return None
-
-    merged_xtb_file = os.path.join(xtb_dir, 'merged_xtb.xyz')
-    with open(merged_xtb_file, 'w') as outfile:
-        for fname in filenames:
-            with open(fname, 'r') as infile:
-                outfile.write(infile.read())
-
-    sorted_xtb_file = os.path.join(xtb_dir, 'sorted_xtb.xyz')
+    sorted_xtb_file = os.path.join(work_dir, f'sorted_xtb_top{numconf}.xyz')
 
     structures = []
     current_structure = []
 
-    with open(merged_xtb_file, 'r') as file:
+    with open(xyz_file, 'r') as file:
         for line in file:
             line = line.strip()
             if line.isdigit():
@@ -117,7 +104,7 @@ def order_energy_xtb(work_dir, numconf):
                     outfile.write(f"{line}\n")
 
     print(f"The lowest {numconf} energy structures have been written to {sorted_xtb_file}")
-    return sorted_xtb_file
+    # return sorted_xtb_file
 
 # input: a xyz file
 # output: a list store the xyz structure
@@ -188,59 +175,73 @@ def read_energy_from_gaussian(log_file_path):
     return energy
 
 def read_final_structure_from_gaussian(log_file_path):
-    """
-    从 Gaussian 输出文件中提取优化后的结构坐标
-    """
+    if not os.path.exists(log_file_path):
+        print(f"File not found: {log_file_path}")
+        return None
+
     with open(log_file_path, 'r') as file:
         lines = file.readlines()
+
     start_idx = None
     end_idx = None
+
     for i, line in enumerate(lines):
         if 'Standard orientation:' in line:
-            start_idx = i + 5  # 跳过标题行
-        elif start_idx and '---------------------------------------------------------------------' in line:
-            end_idx = i
-            break
-    if start_idx and end_idx:
+            start_idx = i + 5  # 坐标数据从 'Standard orientation:' 后的第5行开始
+            # 从 start_idx 开始寻找结束的分隔线
+            for j in range(start_idx, len(lines)):
+                if '---------------------------------------------------------------------' in lines[j]:
+                    end_idx = j
+                    break  # 找到当前块的结束位置
+    # 循环结束后，start_idx 和 end_idx 对应最后一个 'Standard orientation:' 块
+
+    if start_idx is not None and end_idx is not None and start_idx < end_idx:
         atoms = []
         for line in lines[start_idx:end_idx]:
             tokens = line.strip().split()
-            atom_number = int(tokens[1])
-            x = float(tokens[3])
-            y = float(tokens[4])
-            z = float(tokens[5])
-            atom_symbol = Chem.PeriodicTable.GetElementSymbol(Chem.GetPeriodicTable(), atom_number)
-            atoms.append(f"{atom_symbol}   {x}   {y}   {z}")
+            if len(tokens) >= 6:
+                atom_number = int(tokens[1])
+                x, y, z = float(tokens[3]), float(tokens[4]), float(tokens[5])
+                atom_symbol = Chem.PeriodicTable.GetElementSymbol(Chem.GetPeriodicTable(), atom_number)
+                atoms.append(f"{atom_symbol}   {x}   {y}   {z}")
         return atoms
-    else:
-        return None
 
-def order_energy_gaussian(dir_path, output_file):
+    print(f"No valid atomic coordinates found between lines {start_idx} and {end_idx}")
+    return None
+
+def order_energy_gaussian(work_dir, numconf):
+
+    gaussian_dir = os.path.join(work_dir, 'conformer_search', 'gaussian_work')
+    os.makedirs(gaussian_dir, exist_ok=True)
+
     data = []
+    file_pattern = re.compile(r'^conf_\d+\.log$')
     # Traverse all files in the specified folder
-    for file in os.listdir(dir_path):
-        if file.endswith(".out"):
-            log_file_path = os.path.join(dir_path, file)
+    for file in os.listdir(gaussian_dir):
+        if file_pattern.match(file):
+            log_file_path = os.path.join(gaussian_dir, file)
             energy = read_energy_from_gaussian(log_file_path)
             atoms = read_final_structure_from_gaussian(log_file_path)
             if energy is not None and atoms is not None:
                 data.append({"Energy": energy, "Atoms": atoms})
 
     # Check if data is not empty
+    output_file=f"sorted_gaussian_top{numconf}.xyz"
     if data:
         # Sort the structures by energy
         sorted_data = sorted(data, key=lambda x: x['Energy'])
+        selected_data = sorted_data[:numconf]
         # Write the sorted structures to an .xyz file
         with open(output_file, 'w') as outfile:
-            for item in sorted_data:
+            for item in selected_data:
                 num_atoms = len(item['Atoms'])
                 outfile.write(f"{num_atoms}\n")
                 outfile.write(f"Energy = {item['Energy']}\n")
                 for atom_line in item['Atoms']:
                     outfile.write(f"{atom_line}\n")
-        print(f"Sorted structures have been saved to {output_file}")
+        print(f"The lowest {numconf} energy structures have been saved to {output_file}")
     else:
-        print(f"No successful Gaussian output files found in {dir_path}")
+        print(f"No successful Gaussian output files found in {gaussian_dir}")
 
 def get_gaff2(unit_name, length, relax_polymer_lmp_dir, mol, atom_typing='pysimm'):
     print("\nGenerating GAFF2 parameter file ...\n")
